@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>站点映射</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5/dist/reset.css" />
+  <style>
+    body { margin: 0; background: #f5f5f5; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/antd@5/dist/antd-with-locales.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ant-design/icons@5/dist/index.umd.js"></script>
+  <script src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo, useRef, useEffect } = React;
+    const {
+      ConfigProvider,
+      theme,
+      Form,
+      Select,
+      Button,
+      Card,
+      Table,
+      Modal,
+      Space,
+      message,
+      Badge,
+      Input,
+      Typography,
+      Row,
+      Col,
+    } = antd;
+    const { ReloadOutlined, ColumnHeightOutlined, SettingOutlined } = icons;
+    const zhCN = antd.locales?.zhCN;
+
+    const colorPrimary = '#1677FF';
+    const FILTER_PADDING = 20;
+    const FILTER_CONTROL_WIDTH = 260;
+    const FILTER_GUTTER = 50;
+    const FILTER_ROW_GAP = 20;
+    const FILTER_LABEL_WIDTH = 100;
+    const FILTER_ITEM_WIDTH = FILTER_LABEL_WIDTH + FILTER_CONTROL_WIDTH;
+    const FILTER_ACTION_WITH_EXPAND = 240;
+    const FILTER_ACTION_NO_EXPAND = 168;
+
+    const DATA_SOURCE_OPTIONS = [
+      { label: '国际营销管理-新品管理', value: 'marketing-new' },
+      { label: '国际营销管理-亚马逊平台设置', value: 'marketing-amazon' },
+      { label: '国际物流管理-发货计划', value: 'logistics-ship' },
+      { label: '产品中心-产品状态', value: 'product-status' },
+      { label: '产品中心-打包信息', value: 'product-pack' },
+    ];
+
+    const DATA_SOURCE_MAP = Object.fromEntries(DATA_SOURCE_OPTIONS.map((o) => [o.value, o.label]));
+
+    const FILTER_FIELD_KEYS = [
+      'dataSource',
+      'pendingMap',
+      'replenishPlatform',
+      'replenishSite',
+      'platform',
+      'site',
+      'country',
+      'customerName',
+      'warehouseCategory',
+      'status',
+    ];
+
+    function calcFilterLayout(containerWidth, fieldCount) {
+      if (!containerWidth) {
+        return { collapsedCount: fieldCount, showExpand: false, perRow: fieldCount };
+      }
+      const inner = containerWidth - FILTER_PADDING * 2;
+      const fieldsWidth = (n) => n * FILTER_ITEM_WIDTH + Math.max(0, n - 1) * FILTER_GUTTER;
+
+      let perRow = 1;
+      for (let n = fieldCount; n >= 1; n--) {
+        if (fieldsWidth(n) <= inner) {
+          perRow = n;
+          break;
+        }
+      }
+
+      if (fieldsWidth(fieldCount) + FILTER_ACTION_NO_EXPAND <= inner) {
+        return { collapsedCount: fieldCount, showExpand: false, perRow };
+      }
+
+      let collapsedCount = 1;
+      for (let k = fieldCount - 1; k >= 1; k--) {
+        if (fieldsWidth(k) + FILTER_ACTION_WITH_EXPAND <= inner) {
+          collapsedCount = k;
+          break;
+        }
+      }
+      return { collapsedCount, showExpand: true, perRow };
+    }
+
+    function LucideIcon({ name, size = 14, style = {} }) {
+      const icon = lucide?.icons?.[name];
+      if (!icon) return null;
+      const svg = icon.toSvg({ width: size, height: size, 'stroke-width': 2 });
+      return (
+        <span
+          style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', ...style }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      );
+    }
+
+    function matchTextAreaFilter(value, text) {
+      if (!value?.trim()) return true;
+      const lines = value.split('\n').map((s) => s.trim()).filter(Boolean);
+      if (!lines.length) return true;
+      if (lines.length === 1) return (text || '').includes(lines[0]);
+      return lines.includes(text);
+    }
+
+    const INITIAL_DATA = [
+      { id: 1, dataSource: 'marketing-amazon', replenishPlatform: '', replenishSite: '', platform: 'Amazon', site: 'US', country: '美国', customerName: 'Acme Corp', warehouseCategory: 'FBA仓', isVirtual: '否', status: 'enabled', remark: '', creator: '系统', createTime: '2026-06-01 09:12:33', updater: '张三', updateTime: '2026-06-05 14:20:01' },
+      { id: 2, dataSource: 'logistics-ship', replenishPlatform: 'Amazon', replenishSite: 'US-West', platform: 'Amazon', site: 'US-West', country: '美国', customerName: 'Global Trade', warehouseCategory: '海外仓', isVirtual: '否', status: 'enabled', remark: '已映射', creator: '系统', createTime: '2026-06-01 10:15:48', updater: '李四', updateTime: '2026-06-06 10:05:12' },
+      { id: 3, dataSource: 'product-status', replenishPlatform: '', replenishSite: '', platform: 'eBay', site: 'UK', country: '英国', customerName: 'Brit Ltd', warehouseCategory: '第三方仓', isVirtual: '是', status: 'enabled', remark: '待映射', creator: '系统', createTime: '2026-05-28 16:42:09', updater: '王五', updateTime: '2026-06-02 08:30:55' },
+      { id: 4, dataSource: 'marketing-new', replenishPlatform: 'Shopee', replenishSite: 'SG-Central', platform: 'Shopee', site: 'SG', country: '新加坡', customerName: 'SEA Retail', warehouseCategory: '自营仓', isVirtual: '否', status: 'enabled', remark: '', creator: '系统', createTime: '2026-05-30 11:08:20', updater: '赵六', updateTime: '2026-06-04 17:45:33' },
+      { id: 5, dataSource: 'product-pack', replenishPlatform: '', replenishSite: '', platform: 'Lazada', site: 'MY', country: '马来西亚', customerName: 'KL Store', warehouseCategory: 'FBA仓', isVirtual: '否', status: 'disabled', remark: '停用', creator: '系统', createTime: '2026-05-25 10:00:00', updater: '孙七', updateTime: '2026-06-01 09:00:00' },
+      { id: 6, dataSource: 'marketing-amazon', replenishPlatform: 'Walmart', replenishSite: 'US-Central', platform: 'Walmart', site: 'US', country: '美国', customerName: 'US Vendor', warehouseCategory: '海外仓', isVirtual: '否', status: 'enabled', remark: '', creator: '系统', createTime: '2026-05-20 15:30:18', updater: '周八', updateTime: '2026-05-29 13:12:40' },
+      { id: 7, dataSource: 'logistics-ship', replenishPlatform: '', replenishSite: '', platform: 'AliExpress', site: 'RU', country: '俄罗斯', customerName: 'Moscow Shop', warehouseCategory: '第三方仓', isVirtual: '是', status: 'enabled', remark: '待补充映射', creator: '系统', createTime: '2026-05-18 08:22:00', updater: '吴九', updateTime: '2026-05-27 19:01:10' },
+      { id: 8, dataSource: 'product-status', replenishPlatform: 'Amazon', replenishSite: 'JP-Tokyo', platform: 'Amazon', site: 'JP', country: '日本', customerName: 'Tokyo Inc', warehouseCategory: 'FBA仓', isVirtual: '否', status: 'enabled', remark: '', creator: '系统', createTime: '2026-05-15 13:40:25', updater: '田中', updateTime: '2026-05-26 11:33:48' },
+    ];
+
+    const PLATFORM_SITES = {
+      Amazon: ['US-West', 'US-East', 'JP-Tokyo'],
+      eBay: ['UK-London', 'DE-Berlin'],
+      Shopee: ['SG-Central', 'MY-KL'],
+      Lazada: ['MY-KL', 'SG-Central'],
+      Walmart: ['US-Central', 'US-West'],
+      AliExpress: ['UK-London', 'RU-Moscow'],
+    };
+    const ALL_PLATFORMS = Object.keys(PLATFORM_SITES);
+    const ALL_SITES = [...new Set(Object.values(PLATFORM_SITES).flat())];
+
+    function StatusBadge({ status }) {
+      if (status === 'enabled') return <Badge status="success" text="启用" />;
+      return <Badge status="default" text="禁用" />;
+    }
+
+    function SiteMappingPage() {
+      const [form] = Form.useForm();
+      const [dataSource, setDataSource] = useState(INITIAL_DATA);
+      const [expand, setExpand] = useState(false);
+      const [filters, setFilters] = useState({
+        dataSource: [],
+        pendingMap: 'yes',
+        replenishPlatform: [],
+        replenishSite: [],
+        platform: '',
+        site: '',
+        country: '',
+        customerName: '',
+        warehouseCategory: '',
+        status: 'enabled',
+      });
+      const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+      const [tableSize, setTableSize] = useState('middle');
+      const [modalOpen, setModalOpen] = useState(false);
+      const [batchModalOpen, setBatchModalOpen] = useState(false);
+      const [editingId, setEditingId] = useState(null);
+      const [modalSubmitting, setModalSubmitting] = useState(false);
+      const [modalForm] = Form.useForm();
+      const [batchForm] = Form.useForm();
+      const [refreshKey, setRefreshKey] = useState(0);
+      const filterContainerRef = useRef(null);
+      const [filterLayout, setFilterLayout] = useState({
+        collapsedCount: FILTER_FIELD_KEYS.length,
+        showExpand: false,
+        perRow: FILTER_FIELD_KEYS.length,
+      });
+
+      const watchPlatforms = Form.useWatch('replenishPlatform', form) || [];
+      const watchModalPlatform = Form.useWatch('replenishPlatform', modalForm);
+
+      useEffect(() => {
+        const el = filterContainerRef.current;
+        if (!el) return undefined;
+        const update = () => {
+          setFilterLayout(calcFilterLayout(el.offsetWidth, FILTER_FIELD_KEYS.length));
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+      }, []);
+
+      useEffect(() => {
+        if (!filterLayout.showExpand) setExpand(false);
+      }, [filterLayout.showExpand]);
+
+      const siteOptions = useMemo(() => {
+        if (!watchPlatforms.length) return ALL_SITES;
+        const set = new Set();
+        watchPlatforms.forEach((p) => PLATFORM_SITES[p]?.forEach((s) => set.add(s)));
+        return [...set];
+      }, [watchPlatforms]);
+
+      const modalSiteOptions = useMemo(() => {
+        if (!watchModalPlatform) return ALL_SITES;
+        return PLATFORM_SITES[watchModalPlatform] || [];
+      }, [watchModalPlatform]);
+
+      const filteredData = useMemo(() => {
+        return dataSource.filter((row) => {
+          if (filters.dataSource.length && !filters.dataSource.includes(row.dataSource)) return false;
+          if (filters.pendingMap === 'yes' && row.replenishPlatform) return false;
+          if (filters.pendingMap === 'no' && !row.replenishPlatform) return false;
+          if (filters.replenishPlatform.length && !filters.replenishPlatform.includes(row.replenishPlatform)) return false;
+          if (filters.replenishSite.length && !filters.replenishSite.includes(row.replenishSite)) return false;
+          if (!matchTextAreaFilter(filters.platform, row.platform)) return false;
+          if (!matchTextAreaFilter(filters.site, row.site)) return false;
+          if (!matchTextAreaFilter(filters.country, row.country)) return false;
+          if (!matchTextAreaFilter(filters.customerName, row.customerName)) return false;
+          if (!matchTextAreaFilter(filters.warehouseCategory, row.warehouseCategory)) return false;
+          if (filters.status && row.status !== filters.status) return false;
+          return true;
+        });
+      }, [dataSource, filters, refreshKey]);
+
+      const handlePlatformChange = (vals) => {
+        const sites = form.getFieldValue('replenishSite') || [];
+        if (!vals?.length) return;
+        const allowed = new Set();
+        vals.forEach((p) => PLATFORM_SITES[p]?.forEach((s) => allowed.add(s)));
+        const nextSites = sites.filter((s) => allowed.has(s));
+        if (nextSites.length !== sites.length) form.setFieldValue('replenishSite', nextSites);
+      };
+
+      const onSearch = () => {
+        const v = form.getFieldsValue();
+        setFilters({
+          dataSource: v.dataSource || [],
+          pendingMap: v.pendingMap,
+          replenishPlatform: v.replenishPlatform || [],
+          replenishSite: v.replenishSite || [],
+          platform: v.platform || '',
+          site: v.site || '',
+          country: v.country || '',
+          customerName: v.customerName || '',
+          warehouseCategory: v.warehouseCategory || '',
+          status: v.status,
+        });
+        setSelectedRowKeys([]);
+        message.success('查询完成');
+      };
+
+      const onReset = () => {
+        form.resetFields();
+        setFilters({
+          dataSource: [],
+          pendingMap: 'yes',
+          replenishPlatform: [],
+          replenishSite: [],
+          platform: '',
+          site: '',
+          country: '',
+          customerName: '',
+          warehouseCategory: '',
+          status: 'enabled',
+        });
+        setSelectedRowKeys([]);
+        message.info('已重置');
+      };
+
+      const openEdit = (record) => {
+        setEditingId(record.id);
+        modalForm.setFieldsValue({
+          replenishPlatform: record.replenishPlatform || undefined,
+          replenishSite: record.replenishSite || undefined,
+          remark: record.remark,
+        });
+        setModalOpen(true);
+      };
+
+      const openBatchEdit = () => {
+        if (!selectedRowKeys.length) {
+          message.warning('请先选择数据');
+          return;
+        }
+        batchForm.resetFields();
+        setBatchModalOpen(true);
+      };
+
+      const handleModalOk = async () => {
+        try {
+          const values = await modalForm.validateFields();
+          setModalSubmitting(true);
+          const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+          setDataSource((prev) =>
+            prev.map((r) =>
+              r.id === editingId
+                ? {
+                    ...r,
+                    replenishPlatform: values.replenishPlatform || '',
+                    replenishSite: values.replenishSite || '',
+                    remark: values.remark || '',
+                    updater: '当前用户',
+                    updateTime: now,
+                  }
+                : r
+            )
+          );
+          message.success('编辑成功');
+          setModalOpen(false);
+        } catch {
+          // keep open
+        } finally {
+          setModalSubmitting(false);
+        }
+      };
+
+      const handleBatchOk = async () => {
+        try {
+          const values = await batchForm.validateFields();
+          setModalSubmitting(true);
+          const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+          setDataSource((prev) =>
+            prev.map((r) =>
+              selectedRowKeys.includes(r.id)
+                ? {
+                    ...r,
+                    replenishPlatform: values.replenishPlatform || r.replenishPlatform,
+                    replenishSite: values.replenishSite || r.replenishSite,
+                    remark: values.remark !== undefined ? values.remark : r.remark,
+                    updater: '当前用户',
+                    updateTime: now,
+                  }
+                : r
+            )
+          );
+          message.success(`已批量编辑 ${selectedRowKeys.length} 项`);
+          setBatchModalOpen(false);
+          setSelectedRowKeys([]);
+        } catch {
+          // keep open
+        } finally {
+          setModalSubmitting(false);
+        }
+      };
+
+      const columns = [
+        { title: '数据来源', dataIndex: 'dataSource', key: 'dataSource', width: 200, render: (v) => DATA_SOURCE_MAP[v] || v },
+        { title: '补货平台', dataIndex: 'replenishPlatform', key: 'replenishPlatform', width: 110, render: (v) => v || '-' },
+        { title: '补货站点', dataIndex: 'replenishSite', key: 'replenishSite', width: 110, render: (v) => v || '-' },
+        { title: '平台', dataIndex: 'platform', key: 'platform', width: 100 },
+        { title: '站点', dataIndex: 'site', key: 'site', width: 100 },
+        { title: '国家', dataIndex: 'country', key: 'country', width: 90 },
+        { title: '客户名称', dataIndex: 'customerName', key: 'customerName', width: 120, ellipsis: true },
+        { title: '外贸仓库分类', dataIndex: 'warehouseCategory', key: 'warehouseCategory', width: 120 },
+        { title: '是否虚拟平台', dataIndex: 'isVirtual', key: 'isVirtual', width: 110 },
+        { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (s) => <StatusBadge status={s} /> },
+        { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true, render: (v) => v || '-' },
+        { title: '创建人', dataIndex: 'creator', key: 'creator', width: 90 },
+        { title: '创建时间', dataIndex: 'createTime', key: 'createTime', width: 170, sorter: (a, b) => a.createTime.localeCompare(b.createTime) },
+        { title: '修改人', dataIndex: 'updater', key: 'updater', width: 90 },
+        { title: '修改时间', dataIndex: 'updateTime', key: 'updateTime', width: 170, sorter: (a, b) => a.updateTime.localeCompare(b.updateTime) },
+        {
+          title: '操作',
+          key: 'action',
+          fixed: 'right',
+          width: 120,
+          render: (_, record) => (
+            <Space split={<span style={{ color: '#d9d9d9' }}>|</span>} size={0}>
+              <Typography.Link onClick={() => openEdit(record)}>编辑</Typography.Link>
+              <Typography.Link onClick={() => message.info(`查看日志 #${record.id}`)}>日志</Typography.Link>
+            </Space>
+          ),
+        },
+      ];
+
+      const renderTextAreaFilter = (label, name) => (
+        <Form.Item label={label} name={name} style={{ marginBottom: 0 }}>
+          <Input.TextArea placeholder="多条请换行" rows={1} style={{ width: FILTER_CONTROL_WIDTH }} />
+        </Form.Item>
+      );
+
+      const renderFilterField = (key) => {
+        const controlStyle = { width: FILTER_CONTROL_WIDTH };
+        switch (key) {
+          case 'dataSource':
+            return (
+              <Form.Item label="数据来源" name="dataSource" style={{ marginBottom: 0 }}>
+                <Select mode="multiple" allowClear placeholder="请选择" style={controlStyle} options={DATA_SOURCE_OPTIONS} />
+              </Form.Item>
+            );
+          case 'pendingMap':
+            return (
+              <Form.Item label="待映射" name="pendingMap" style={{ marginBottom: 0 }} initialValue="yes">
+                <Select placeholder="请选择" style={controlStyle} options={[{ label: '是', value: 'yes' }, { label: '否', value: 'no' }]} />
+              </Form.Item>
+            );
+          case 'replenishPlatform':
+            return (
+              <Form.Item label="补货平台" name="replenishPlatform" style={{ marginBottom: 0 }}>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  placeholder="请选择"
+                  style={controlStyle}
+                  options={ALL_PLATFORMS.map((p) => ({ label: p, value: p }))}
+                  onChange={handlePlatformChange}
+                />
+              </Form.Item>
+            );
+          case 'replenishSite':
+            return (
+              <Form.Item label="补货站点" name="replenishSite" style={{ marginBottom: 0 }}>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  placeholder="请选择"
+                  style={controlStyle}
+                  options={siteOptions.map((s) => ({ label: s, value: s }))}
+                />
+              </Form.Item>
+            );
+          case 'platform':
+            return renderTextAreaFilter('平台', 'platform');
+          case 'site':
+            return renderTextAreaFilter('站点', 'site');
+          case 'country':
+            return renderTextAreaFilter('国家', 'country');
+          case 'customerName':
+            return renderTextAreaFilter('客户名称', 'customerName');
+          case 'warehouseCategory':
+            return renderTextAreaFilter('外贸仓库分类', 'warehouseCategory');
+          case 'status':
+            return (
+              <Form.Item label="状态" name="status" style={{ marginBottom: 0 }} initialValue="enabled">
+                <Select
+                  allowClear
+                  placeholder="请选择"
+                  style={controlStyle}
+                  options={[
+                    { label: '启用', value: 'enabled' },
+                    { label: '禁用', value: 'disabled' },
+                  ]}
+                />
+              </Form.Item>
+            );
+          default:
+            return null;
+        }
+      };
+
+      const renderFilterActions = () => (
+        <Space>
+          <Button onClick={onReset}>重置</Button>
+          <Button type="primary" onClick={onSearch}>查询</Button>
+          {filterLayout.showExpand && (
+            <Button type="link" onClick={() => setExpand((v) => !v)} style={{ paddingInline: 4 }}>
+              {expand ? '收起' : '展开'}
+              <LucideIcon name={expand ? 'chevron-up' : 'chevron-down'} size={14} style={{ marginLeft: 4 }} />
+            </Button>
+          )}
+        </Space>
+      );
+
+      const visibleFieldKeys = useMemo(() => {
+        if (expand || !filterLayout.showExpand) return FILTER_FIELD_KEYS;
+        return FILTER_FIELD_KEYS.slice(0, filterLayout.collapsedCount);
+      }, [expand, filterLayout]);
+
+      const expandedRows = useMemo(() => {
+        if (!expand) return [visibleFieldKeys];
+        const rows = [];
+        for (let i = 0; i < FILTER_FIELD_KEYS.length; i += filterLayout.perRow) {
+          rows.push(FILTER_FIELD_KEYS.slice(i, i + filterLayout.perRow));
+        }
+        return rows;
+      }, [expand, filterLayout.perRow, visibleFieldKeys]);
+
+      const densityCycle = () => {
+        const order = ['large', 'middle', 'small'];
+        const labels = { large: '默认', middle: '中等', small: '紧凑' };
+        setTableSize((s) => {
+          const next = order[(order.indexOf(s) + 1) % order.length];
+          message.info(`表格密度：${labels[next]}`);
+          return next;
+        });
+      };
+
+      return (
+        <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+          <div style={{ background: '#fff', padding: '16px 24px', borderBottom: '1px solid #f0f0f0' }}>
+            <div style={{ color: 'rgba(0,0,0,0.45)', marginBottom: 8 }}>
+              基础数据 <span style={{ margin: '0 8px', color: 'rgba(0,0,0,0.25)' }}>/</span>
+              <span style={{ color: 'rgba(0,0,0,0.65)' }}>站点映射</span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 600 }}>站点映射</div>
+          </div>
+
+          <div style={{ padding: 24 }}>
+            <Card style={{ marginBottom: 16 }} bodyStyle={{ padding: FILTER_PADDING }}>
+              <div ref={filterContainerRef}>
+                <Form
+                  form={form}
+                  labelCol={{ flex: `0 0 ${FILTER_LABEL_WIDTH}px` }}
+                  wrapperCol={{ flex: '0 0 auto' }}
+                  initialValues={{ pendingMap: 'yes', status: 'enabled' }}
+                >
+                  {!expand ? (
+                    <Row gutter={[FILTER_GUTTER, 0]} align="middle" wrap={false}>
+                      {visibleFieldKeys.map((key) => (
+                        <Col flex="none" key={key}>{renderFilterField(key)}</Col>
+                      ))}
+                      <Col flex="auto" style={{ textAlign: 'right' }}>{renderFilterActions()}</Col>
+                    </Row>
+                  ) : (
+                    <>
+                      {expandedRows.map((rowKeys, rowIndex) => (
+                        <Row
+                          key={rowKeys.join('-')}
+                          gutter={[FILTER_GUTTER, 0]}
+                          align="middle"
+                          wrap={false}
+                          style={{ marginTop: rowIndex > 0 ? FILTER_ROW_GAP : 0 }}
+                        >
+                          {rowKeys.map((key) => (
+                            <Col flex="none" key={key}>{renderFilterField(key)}</Col>
+                          ))}
+                        </Row>
+                      ))}
+                      <Row justify="end" style={{ marginTop: FILTER_ROW_GAP }}>
+                        <Col flex="none">{renderFilterActions()}</Col>
+                      </Row>
+                    </>
+                  )}
+                </Form>
+              </div>
+            </Card>
+
+            <Card
+              title="站点映射列表"
+              extra={
+                <Space>
+                  <Button onClick={openBatchEdit}>批量编辑</Button>
+                  <Button
+                    onClick={() =>
+                      message.success(
+                        selectedRowKeys.length
+                          ? `导出选中 ${selectedRowKeys.length} 项`
+                          : `导出全部 ${filteredData.length} 条查询结果`
+                      )
+                    }
+                  >
+                    导出
+                  </Button>
+                  <Button onClick={() => selectedRowKeys.length ? message.info(`查看 ${selectedRowKeys.length} 项日志`) : message.warning('请先选择数据')}>
+                    日志
+                  </Button>
+                  <Space size={4} style={{ marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid #f0f0f0' }}>
+                    <Button type="text" icon={<ReloadOutlined />} onClick={() => { setRefreshKey((k) => k + 1); message.success('已刷新'); }} />
+                    <Button type="text" icon={<ColumnHeightOutlined />} onClick={densityCycle} />
+                    <Button type="text" icon={<SettingOutlined />} onClick={() => message.info('列设置')} />
+                  </Space>
+                </Space>
+              }
+            >
+              <Table
+                rowKey="id"
+                size={tableSize}
+                columns={columns}
+                dataSource={filteredData}
+                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+                pagination={{
+                  showSizeChanger: true,
+                  showTotal: (t) => `共 ${t} 条`,
+                  defaultPageSize: 10,
+                  pageSizeOptions: [10, 20, 50],
+                }}
+                scroll={{ x: 2200 }}
+              />
+            </Card>
+          </div>
+
+          <Modal
+            title="编辑站点映射"
+            open={modalOpen}
+            width={520}
+            destroyOnClose
+            maskClosable={false}
+            okText="确定"
+            cancelText="取消"
+            confirmLoading={modalSubmitting}
+            onOk={handleModalOk}
+            onCancel={() => setModalOpen(false)}
+          >
+            <Form form={modalForm} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 16 }}>
+              <Form.Item label="补货平台" name="replenishPlatform" rules={[{ required: true, message: '请选择补货平台' }]}>
+                <Select
+                  allowClear
+                  placeholder="请选择"
+                  options={ALL_PLATFORMS.map((p) => ({ label: p, value: p }))}
+                  onChange={() => modalForm.setFieldValue('replenishSite', undefined)}
+                />
+              </Form.Item>
+              <Form.Item label="补货站点" name="replenishSite" rules={[{ required: true, message: '请选择补货站点' }]}>
+                <Select allowClear placeholder="请选择" options={modalSiteOptions.map((s) => ({ label: s, value: s }))} />
+              </Form.Item>
+              <Form.Item label="备注" name="remark">
+                <Input.TextArea placeholder="请输入" rows={3} />
+              </Form.Item>
+            </Form>
+          </Modal>
+
+          <Modal
+            title="批量编辑站点映射"
+            open={batchModalOpen}
+            width={520}
+            destroyOnClose
+            maskClosable={false}
+            okText="确定"
+            cancelText="取消"
+            confirmLoading={modalSubmitting}
+            onOk={handleBatchOk}
+            onCancel={() => setBatchModalOpen(false)}
+          >
+            <Form form={batchForm} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 16 }}>
+              <Form.Item label="补货平台" name="replenishPlatform">
+                <Select allowClear placeholder="请选择" options={ALL_PLATFORMS.map((p) => ({ label: p, value: p }))} />
+              </Form.Item>
+              <Form.Item label="补货站点" name="replenishSite">
+                <Select allowClear placeholder="请选择" options={ALL_SITES.map((s) => ({ label: s, value: s }))} />
+              </Form.Item>
+              <Form.Item label="备注" name="remark">
+                <Input.TextArea placeholder="请输入" rows={3} />
+              </Form.Item>
+            </Form>
+          </Modal>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(
+      <ConfigProvider
+        locale={zhCN}
+        theme={{ token: { colorPrimary, borderRadius: 6, fontSize: 14 }, algorithm: theme.defaultAlgorithm }}
+      >
+        <SiteMappingPage />
+      </ConfigProvider>
+    );
+  </script>
+</body>
+</html>

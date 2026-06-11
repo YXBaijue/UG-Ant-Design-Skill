@@ -1,17 +1,72 @@
-# Ant Design 设计系统规范（通用版）
+﻿# Ant Design 设计系统规范（通用版）
 
 
 ## 使用说明
 
 本规范用于指导 AI 生成基于 Ant Design 的前端页面原型图。
 
+### 文件定位
+
+本文件仅包含 **视觉样式约定**（第一～四部分：品牌配置、Design Token、布局指南、组件外观参数）。**这部分内容保持不动**，作为样式权威来源。
+
+页面模板、交互、组件实现等规则已拆分到独立文件，勿再写入本文件以免重复膨胀。
+
+### 仓库结构
+
+对于支持读取仓库文件结构的 AI 工具，生成页面时须按以下结构读取补充规则：
+
+```text
+project-root/
+├── ant-design-system-prompt.md
+├── rules/
+│   ├── README.md
+│   ├── interaction.md
+│   └── components.md
+├── templates/
+│   ├── README.md
+│   ├── list-table.md
+│   └── detail-basic.md
+└── dist/
+    └── ant-design-system.full.md   ← Gemini 等单文件导入用（样式 + 模板 + 规则合并版）
+```
+
+**Gemini 等只能导入单个 raw 文件时**，请使用 `dist/ant-design-system.full.md`，不要只导入本文件。
+
+生成页面时除本文件外，还必须遵循：
+
+- `rules/components.md`：默认 React + `antd`；HTML 页面通过 CDN 引入 React + antd 使用真实组件；不得默认 Vue 或原生 JS 模拟组件。
+- `rules/interaction.md`：页面必须可交互、可点击（非静态）；Tailwind 仅作布局辅助，不得替代 antd 组件。
+
+### 默认生成模式（强约束）
+
+生成 **B 端后台页面** 时，**默认必须带左侧菜单应用壳**（`Layout` + `Menu`），除非用户明确要求「仅内容页」「不要菜单」「独立单页」。
+
+默认读取顺序：
+
+1. **`templates/app-shell.md`**（应用壳 + 页面注册表 + 菜单切换）— 始终先读
+2. 业务页模板（按类型二选一或多选）：
+   - 查询表格页 / 列表页 / TableList → `templates/list-table.md`
+   - 详情页 / Basic Profile → `templates/detail-basic.md`
+   - 弹窗表单 → `templates/form-modal.md`
+
+HTML 原型默认扩展 `admin-shell.html`；新业务页须写入 `PAGE_REGISTRY` 并挂入菜单。
+
+### 页面模板索引
+
+完整索引见 `templates/README.md`。
+
+页面模板约束优先级高于通用组件参数；品牌配置和全局 Design Token 仍是最高层的视觉约束。
+
 ### 工作流程
 
 1. 读取下方「品牌配置」章节，获取当前项目的品牌参数
-2. 品牌配置中的值覆盖 Design Token 默认值
-3. 间距、圆角、字号等使用「全局 Design Token」中的标准值
-4. 具体组件样式参考「组件级设计参数」
-5. 页面整体布局参考「B 端页面布局指南」
+2. **默认读取 `templates/app-shell.md` 搭建后台壳**（用户明确不要菜单时跳过）
+3. 品牌配置中的值覆盖 Design Token 默认值
+4. 间距、圆角、字号等使用「全局 Design Token」中的标准值
+5. 具体组件样式参考「组件级设计参数」
+6. 页面整体布局参考「B 端页面布局指南」
+7. 读取业务页面对应模板（`list-table.md` 等）生成 `Content` 区内内容
+8. 组件实现必须遵循 `rules/components.md`：优先 React + antd，其次 Vue + ant-design-vue
 
 ### 关键约束
 
@@ -571,4 +626,21 @@ Tag 基础参数：字号 `12px`，圆角 `4px`，内边距 `0 7px`，行高 `20
 | Notification | 宽度 `384px`，z-index `2050`                      |
 | Upload       | 拖拽区圆角 `8px`，虚线边框 `#D9D9D9`，hover=主色            |
 
+---
 
+# 附录：扩展规范索引
+
+以下规则已从本文件拆出，维护时请改对应文件，勿回写到第一～四部分。
+
+| 类型 | 文件 | 说明 |
+| ---- | ---- | ---- |
+| 后台应用壳模板 | `templates/app-shell.md` | Layout + Menu 多页切换与页面注册表 |
+| 查询表格页模板 | `templates/list-table.md` | TableList 页面结构与强约束 |
+| 详情页模板 | `templates/detail-basic.md` | Basic Profile 页面结构与强约束 |
+| 表单弹窗模板 | `templates/form-modal.md` | Modal + Form（Basic Form）结构与强约束 |
+| 页面模板索引 | `templates/README.md` | 按页面类型选择模板 |
+| 交互与技术 | `rules/interaction.md` | 可交互、Tailwind 辅助、图标 |
+| 组件实现 | `rules/components.md` | React + antd 默认、增删改查组件映射 |
+| 完整合并版 | `dist/ant-design-system.full.md` | 单文件导入（样式 + 全部扩展规则） |
+
+读取顺序：本文件（样式）→ 判断页面类型 → `templates/` + `rules/`。

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>后台管理系统</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5/dist/reset.css" />
+  <style>
+    body { margin: 0; }
+    #root { min-height: 100vh; }
+    .admin-logo {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      font-weight: 600;
+      font-size: 16px;
+      border-bottom: 1px solid #f0f0f0;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .admin-header-title {
+      font-size: 14px;
+      color: rgba(0, 0, 0, 0.65);
+    }
+    .admin-header-title .sep { margin: 0 8px; color: rgba(0, 0, 0, 0.25); }
+    .admin-header-title .current { color: rgba(0, 0, 0, 0.88); }
+    .admin-content-frame {
+      width: 100%;
+      height: calc(100vh - 48px);
+      border: 0;
+      display: block;
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React 18.3.1 UMD + dayjs（antd 5 必需）+ antd；勿加 crossorigin，支持 file:// 直开 -->
+  <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/antd@5/dist/antd-with-locales.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo } = React;
+    const { ConfigProvider, theme, Layout, Menu } = antd;
+    const zhCN = antd.locales?.zhCN;
+
+    const { Header, Sider, Content } = Layout;
+    const colorPrimary = '#1677FF';
+    const brandName = 'xxxx 管理后台';
+    const SIDER_WIDTH = 208;
+
+    // 页面注册表：菜单 key → 元信息（新增业务页在此注册）
+    const PAGE_REGISTRY = {
+      'stock-site-list': {
+        label: '国际备货站点列表',
+        breadcrumb: ['备货管理', '国际备货站点列表'],
+        group: '备货管理',
+        // HTML 原型：iframe 挂载已有独立页面；工程化请改为 component
+        src: '国际备货站点列表.html',
+      },
+      'site-mapping': {
+        label: '站点映射',
+        breadcrumb: ['基础数据', '站点映射'],
+        group: '基础数据',
+        src: '站点映射.html',
+      },
+    };
+
+    const DEFAULT_PAGE_KEY = 'stock-site-list';
+
+    function buildMenuItems(registry) {
+      const groups = new Map();
+      Object.entries(registry).forEach(([key, page]) => {
+        const g = page.group || '默认';
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push({ key, label: page.label });
+      });
+      return [...groups.entries()].map(([group, children]) => ({
+        type: 'group',
+        label: group,
+        children,
+      }));
+    }
+
+    function AdminShell() {
+      const [collapsed, setCollapsed] = useState(false);
+      const [activeKey, setActiveKey] = useState(DEFAULT_PAGE_KEY);
+
+      const menuItems = useMemo(() => buildMenuItems(PAGE_REGISTRY), []);
+      const activePage = PAGE_REGISTRY[activeKey];
+
+      return (
+        <Layout style={{ minHeight: '100vh' }}>
+          <Sider
+            theme="light"
+            width={SIDER_WIDTH}
+            collapsedWidth={48}
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            style={{ borderRight: '1px solid #f0f0f0' }}
+          >
+            <div className="admin-logo">{collapsed ? 'UG' : brandName}</div>
+            <Menu
+              theme="light"
+              mode="inline"
+              selectedKeys={[activeKey]}
+              items={menuItems}
+              onClick={({ key }) => setActiveKey(key)}
+              style={{ borderInlineEnd: 0 }}
+            />
+          </Sider>
+          <Layout>
+            <Header
+              style={{
+                height: 48,
+                lineHeight: '48px',
+                padding: '0 24px',
+                background: '#fff',
+                borderBottom: '1px solid #f0f0f0',
+              }}
+            >
+              <div className="admin-header-title">
+                {activePage.breadcrumb.map((item, i) => (
+                  <span key={item}>
+                    {i > 0 && <span className="sep">/</span>}
+                    <span className={i === activePage.breadcrumb.length - 1 ? 'current' : ''}>
+                      {item}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </Header>
+            <Content style={{ margin: 0, padding: 0, background: '#f5f5f5', overflow: 'hidden' }}>
+              {/* 切换菜单时 key 变化，iframe 重新加载对应业务页 */}
+              <iframe
+                key={activeKey}
+                className="admin-content-frame"
+                title={activePage.label}
+                src={`./${encodeURI(activePage.src)}`}
+              />
+            </Content>
+          </Layout>
+        </Layout>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <ConfigProvider
+        locale={zhCN}
+        theme={{
+          token: { colorPrimary, borderRadius: 6, fontSize: 14 },
+          algorithm: theme.defaultAlgorithm,
+        }}
+      >
+        <AdminShell />
+      </ConfigProvider>
+    );
+  </script>
+</body>
+</html>
