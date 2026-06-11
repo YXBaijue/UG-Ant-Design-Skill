@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>列表页母版</title>
+  <!--
+    ============================================================
+    列表页母版 template-list-page.html（精准复刻用）
+    ============================================================
+    用途：B 端「应用壳 + 查询表格列表页」标准母版。
+         产品 / AI 复刻新页面时，只改【业务填空区】，禁止改结构区。
+
+    【禁止改动（结构区，保证视觉与交互一致）】
+      1. CDN 引入（jsdelivr + dayjs + antd-with-locales + icons@5 + lucide + babel）
+      2. 应用壳 AdminShell：Layout + 浅色 Sider + Menu + Header 面包屑 + Content
+      3. 查询区自适应展开/收起算法（calcFilterLayout / ResizeObserver / expandedRows）
+      4. 表格 Card + 工具栏（新增/批量/导出 + 刷新/密度/列设置）
+      5. 新增/编辑 Modal + Form（destroyOnClose / maskClosable / validateFields）
+      6. ConfigProvider 主题 colorPrimary = #1677FF
+      7. 各类尺寸常量（FILTER_PADDING / GUTTER / CONTROL_WIDTH 等）
+
+    【只允许改动（业务填空区，搜索 "业务填空区 BEGIN"）】
+      - BRAND_NAME：左上角品牌名
+      - PAGES：页面注册表（菜单 + 每页 config）
+        每个 page = { label, group, breadcrumb, title, filterFields, columns, formFields, data }
+        · filterFields: [{ key, label, type:'input'|'select'|'multiSelect'|'dateRange', options?, dateField? }]
+        · columns:      [{ title, dataIndex, type?:'link'|'status'|'text', sorter?, ellipsis?, width? }]
+        · formFields:   [{ key, label, type:'input'|'textarea'|'select', required?, options? }]
+        · data:         模拟数据数组（字段名与 columns.dataIndex 对应）
+      - status 字段约定取值 'enabled' / 'disabled'，由 type:'status' 列渲染圆点
+
+    【复刻流程】
+      1. 复制本文件 → 改 BRAND_NAME 与 PAGES 配置 → 双击即可预览。
+      2. 加新页面：在 PAGES 里新增一个 key 即可，菜单与内容自动生成。
+
+    【主色硬约束】品牌名含 UGREEN 但主色不是绿色，默认 #1677FF，勿改绿。
+    ============================================================
+  -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5/dist/reset.css" />
+  <style>
+    body { margin: 0; background: #f5f5f5; }
+    #root { min-height: 100vh; }
+    .admin-logo {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      font-weight: 600;
+      font-size: 16px;
+      color: #1677ff;
+      border-bottom: 1px solid #f0f0f0;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .admin-header-title { font-size: 14px; color: rgba(0, 0, 0, 0.65); }
+    .admin-header-title .sep { margin: 0 8px; color: rgba(0, 0, 0, 0.25); }
+    .admin-header-title .current { color: rgba(0, 0, 0, 0.88); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- 结构区：CDN（勿改顺序/来源；勿换 unpkg，勿用 icons UMD 之外的写法） -->
+  <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/antd@5/dist/antd-with-locales.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ant-design/icons@5/dist/index.umd.js"></script>
+  <script src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo, useRef, useEffect } = React;
+    const {
+      ConfigProvider, theme, Layout, Menu,
+      Form, Select, Button, Card, Table, Modal, Space, message,
+      Badge, Input, Typography, Row, Col, DatePicker,
+    } = antd;
+    const { PlusOutlined, ReloadOutlined, ColumnHeightOutlined, SettingOutlined } = icons;
+    const { Header, Sider, Content } = Layout;
+    const zhCN = antd.locales?.zhCN;
+
+    /* ============================================================
+       业务填空区 BEGIN —— 只改这一段
+       ============================================================ */
+    const BRAND_NAME = 'UGREEN 管理后台';
+
+    const PAGES = {
+      // 页面 key（菜单唯一标识）
+      'demo-list': {
+        label: '数据列表',            // 菜单显示名
+        group: '示例分组',            // 菜单分组名
+        breadcrumb: ['示例分组', '数据列表'], // 顶栏面包屑
+        title: '数据列表',            // 页面大标题
+
+        // 查询条件：type 支持 input / select / multiSelect / dateRange
+        filterFields: [
+          { key: 'name', label: '名称', type: 'input' },
+          { key: 'category', label: '分类', type: 'select', options: [
+            { label: '类型A', value: 'A' },
+            { label: '类型B', value: 'B' },
+          ] },
+          { key: 'status', label: '状态', type: 'select', options: [
+            { label: '启用', value: 'enabled' },
+            { label: '禁用', value: 'disabled' },
+          ] },
+          { key: 'owner', label: '负责人', type: 'input' },
+          { key: 'createTimeRange', label: '创建时间', type: 'dateRange', dateField: 'createTime' },
+        ],
+
+        // 表格列：type 支持 link（蓝色链接）/ status（圆点）/ 不写为普通文本
+        columns: [
+          { title: '名称', dataIndex: 'name', type: 'link' },
+          { title: '分类', dataIndex: 'category' },
+          { title: '状态', dataIndex: 'status', type: 'status' },
+          { title: '备注', dataIndex: 'remark', ellipsis: true },
+          { title: '创建人', dataIndex: 'creator' },
+          { title: '创建时间', dataIndex: 'createTime', sorter: true },
+          { title: '修改人', dataIndex: 'updater' },
+          { title: '修改时间', dataIndex: 'updateTime', sorter: true },
+        ],
+
+        // 新增/编辑表单字段：type 支持 input / textarea / select
+        formFields: [
+          { key: 'name', label: '名称', type: 'input', required: true },
+          { key: 'category', label: '分类', type: 'select', required: true, options: [
+            { label: '类型A', value: 'A' },
+            { label: '类型B', value: 'B' },
+          ] },
+          { key: 'remark', label: '备注', type: 'textarea' },
+        ],
+
+        // 模拟数据（字段名与 columns.dataIndex 对应；status 用 enabled/disabled）
+        data: [
+          { id: 1, name: '示例数据一', category: 'A', status: 'enabled', remark: '备注说明文本', creator: '张三', createTime: '2026-06-01 09:12:33', updater: '李四', updateTime: '2026-06-05 14:20:01' },
+          { id: 2, name: '示例数据二', category: 'B', status: 'enabled', remark: '正常运行中', creator: '张三', createTime: '2026-06-01 09:15:48', updater: '王五', updateTime: '2026-06-06 10:05:12' },
+          { id: 3, name: '示例数据三', category: 'A', status: 'disabled', remark: '已停用', creator: '赵六', createTime: '2026-05-28 16:42:09', updater: '赵六', updateTime: '2026-06-02 08:30:55' },
+          { id: 4, name: '示例数据四', category: 'B', status: 'enabled', remark: '新增条目', creator: '孙七', createTime: '2026-05-30 11:08:20', updater: '李四', updateTime: '2026-06-04 17:45:33' },
+          { id: 5, name: '示例数据五', category: 'A', status: 'enabled', remark: '常规数据', creator: '周八', createTime: '2026-05-25 10:00:00', updater: '周八', updateTime: '2026-06-01 09:00:00' },
+          { id: 6, name: '示例数据六', category: 'B', status: 'disabled', remark: '暂停使用', creator: '吴九', createTime: '2026-05-20 15:30:18', updater: '王五', updateTime: '2026-05-29 13:12:40' },
+        ],
+      },
+
+      // 复制上面的对象即可新增页面，例如：
+      // 'second-list': { label: '第二列表', group: '示例分组', breadcrumb: [...], title: '...', filterFields: [...], columns: [...], formFields: [...], data: [...] },
+    };
+
+    const DEFAULT_PAGE_KEY = 'demo-list';
+    /* ============================================================
+       业务填空区 END
+       ============================================================ */
+
+    /* ============ 结构区：以下勿改 ============ */
+    const colorPrimary = '#1677FF';
+    const SIDER_WIDTH = 208;
+    const FILTER_PADDING = 20;
+    const FILTER_CONTROL_WIDTH = 260;
+    const FILTER_GUTTER = 50;
+    const FILTER_ROW_GAP = 20;
+    const FILTER_LABEL_WIDTH = 80;
+    const FILTER_ITEM_WIDTH = FILTER_LABEL_WIDTH + FILTER_CONTROL_WIDTH;
+    const FILTER_ACTION_WITH_EXPAND = 240;
+    const FILTER_ACTION_NO_EXPAND = 168;
+
+    function calcFilterLayout(containerWidth, fieldCount) {
+      if (!containerWidth) {
+        return { collapsedCount: fieldCount, showExpand: false, perRow: fieldCount };
+      }
+      const inner = containerWidth - FILTER_PADDING * 2;
+      const fieldsWidth = (n) => n * FILTER_ITEM_WIDTH + Math.max(0, n - 1) * FILTER_GUTTER;
+      let perRow = 1;
+      for (let n = fieldCount; n >= 1; n--) {
+        if (fieldsWidth(n) <= inner) { perRow = n; break; }
+      }
+      if (fieldsWidth(fieldCount) + FILTER_ACTION_NO_EXPAND <= inner) {
+        return { collapsedCount: fieldCount, showExpand: false, perRow };
+      }
+      let collapsedCount = 1;
+      for (let k = fieldCount - 1; k >= 1; k--) {
+        if (fieldsWidth(k) + FILTER_ACTION_WITH_EXPAND <= inner) { collapsedCount = k; break; }
+      }
+      return { collapsedCount, showExpand: true, perRow };
+    }
+
+    function LucideIcon({ name, size = 14, style = {} }) {
+      const icon = lucide?.icons?.[name];
+      if (!icon) return null;
+      const svg = icon.toSvg({ width: size, height: size, 'stroke-width': 2 });
+      return (
+        <span
+          style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', ...style }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      );
+    }
+
+    function StatusBadge({ status }) {
+      return status === 'enabled'
+        ? <Badge status="success" text="启用" />
+        : <Badge status="default" text="禁用" />;
+    }
+
+    function buildMenuItems(pages) {
+      const groups = new Map();
+      Object.entries(pages).forEach(([key, page]) => {
+        const g = page.group || '默认';
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push({ key, label: page.label });
+      });
+      return [...groups.entries()].map(([group, children]) => ({
+        type: 'group', label: group, children,
+      }));
+    }
+
+    function ListPage({ config }) {
+      const [form] = Form.useForm();
+      const [modalForm] = Form.useForm();
+      const [dataSource, setDataSource] = useState(config.data);
+      const [expand, setExpand] = useState(false);
+      const [filters, setFilters] = useState({});
+      const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+      const [tableSize, setTableSize] = useState('middle');
+      const [modalOpen, setModalOpen] = useState(false);
+      const [editingId, setEditingId] = useState(null);
+      const [modalSubmitting, setModalSubmitting] = useState(false);
+      const [refreshKey, setRefreshKey] = useState(0);
+      const filterContainerRef = useRef(null);
+
+      const fieldKeys = config.filterFields.map((f) => f.key);
+      const [filterLayout, setFilterLayout] = useState({
+        collapsedCount: fieldKeys.length, showExpand: false, perRow: fieldKeys.length,
+      });
+
+      // 切换页面时重置数据
+      useEffect(() => {
+        setDataSource(config.data);
+        setFilters({});
+        setSelectedRowKeys([]);
+        form.resetFields();
+      }, [config]);
+
+      useEffect(() => {
+        const el = filterContainerRef.current;
+        if (!el) return undefined;
+        const update = () => setFilterLayout(calcFilterLayout(el.offsetWidth, fieldKeys.length));
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+      }, [config]);
+
+      useEffect(() => {
+        if (!filterLayout.showExpand) setExpand(false);
+      }, [filterLayout.showExpand]);
+
+      const filteredData = useMemo(() => {
+        return dataSource.filter((row) => {
+          for (const f of config.filterFields) {
+            const v = filters[f.key];
+            if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) continue;
+            if (f.type === 'input') {
+              if (!String(row[f.key] ?? '').includes(String(v).trim())) return false;
+            } else if (f.type === 'select') {
+              if (row[f.key] !== v) return false;
+            } else if (f.type === 'multiSelect') {
+              if (!v.includes(row[f.key])) return false;
+            } else if (f.type === 'dateRange' && v.length === 2) {
+              const field = f.dateField || 'createTime';
+              const t = dayjs(row[field]);
+              if (t.isBefore(v[0].startOf('day')) || t.isAfter(v[1].endOf('day'))) return false;
+            }
+          }
+          return true;
+        });
+      }, [dataSource, filters, refreshKey, config]);
+
+      const onSearch = () => {
+        setFilters(form.getFieldsValue());
+        setSelectedRowKeys([]);
+        message.success('查询完成');
+      };
+      const onReset = () => {
+        form.resetFields();
+        setFilters({});
+        setSelectedRowKeys([]);
+        message.info('已重置');
+      };
+
+      const openCreate = () => { setEditingId(null); modalForm.resetFields(); setModalOpen(true); };
+      const openEdit = (record) => {
+        setEditingId(record.id);
+        const vals = {};
+        config.formFields.forEach((f) => { vals[f.key] = record[f.key]; });
+        modalForm.setFieldsValue(vals);
+        setModalOpen(true);
+      };
+
+      const handleModalOk = async () => {
+        try {
+          const values = await modalForm.validateFields();
+          setModalSubmitting(true);
+          const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+          if (editingId) {
+            setDataSource((prev) => prev.map((r) =>
+              r.id === editingId ? { ...r, ...values, updater: '当前用户', updateTime: now } : r
+            ));
+            message.success('编辑成功');
+          } else {
+            const newId = Math.max(0, ...dataSource.map((r) => r.id)) + 1;
+            setDataSource((prev) => [
+              { id: newId, ...values, status: 'enabled', creator: '当前用户', createTime: now, updater: '当前用户', updateTime: now },
+              ...prev,
+            ]);
+            message.success('新增成功');
+          }
+          setModalOpen(false);
+        } catch {
+          // 校验失败保持弹窗
+        } finally {
+          setModalSubmitting(false);
+        }
+      };
+
+      const requireSelection = (action) => {
+        if (!selectedRowKeys.length) { message.warning('请先选择数据'); return; }
+        action();
+      };
+
+      const columns = useMemo(() => {
+        const cols = config.columns.map((c) => {
+          const col = { title: c.title, dataIndex: c.dataIndex, key: c.dataIndex, ellipsis: c.ellipsis, width: c.width };
+          if (c.sorter) col.sorter = (a, b) => String(a[c.dataIndex] ?? '').localeCompare(String(b[c.dataIndex] ?? ''));
+          if (c.type === 'status') col.render = (s) => <StatusBadge status={s} />;
+          else if (c.type === 'link') col.render = (text, record) => (
+            <Typography.Link onClick={() => message.info(`查看：${text}`)}>{text}</Typography.Link>
+          );
+          return col;
+        });
+        cols.push({
+          title: '操作', key: 'action', fixed: 'right', width: 120,
+          render: (_, record) => (
+            <Space split={<span style={{ color: '#d9d9d9' }}>|</span>} size={0}>
+              <Typography.Link onClick={() => openEdit(record)}>编辑</Typography.Link>
+              <Typography.Link onClick={() => message.info(`查看日志 #${record.id}`)}>日志</Typography.Link>
+            </Space>
+          ),
+        });
+        return cols;
+      }, [config]);
+
+      const renderFilterField = (f) => {
+        const itemStyle = { marginBottom: 0 };
+        const controlStyle = { width: FILTER_CONTROL_WIDTH };
+        if (f.type === 'input') {
+          return (
+            <Form.Item label={f.label} name={f.key} style={itemStyle}>
+              <Input allowClear placeholder="请输入" style={controlStyle} />
+            </Form.Item>
+          );
+        }
+        if (f.type === 'select') {
+          return (
+            <Form.Item label={f.label} name={f.key} style={itemStyle}>
+              <Select allowClear placeholder="请选择" style={controlStyle} options={f.options} />
+            </Form.Item>
+          );
+        }
+        if (f.type === 'multiSelect') {
+          return (
+            <Form.Item label={f.label} name={f.key} style={itemStyle}>
+              <Select mode="multiple" allowClear placeholder="请选择" style={controlStyle} options={f.options} />
+            </Form.Item>
+          );
+        }
+        if (f.type === 'dateRange') {
+          return (
+            <Form.Item label={f.label} name={f.key} style={itemStyle}>
+              <DatePicker.RangePicker style={controlStyle} placeholder={['开始日期', '结束日期']} />
+            </Form.Item>
+          );
+        }
+        return null;
+      };
+
+      const renderFilterActions = () => (
+        <Space>
+          <Button onClick={onReset}>重置</Button>
+          <Button type="primary" onClick={onSearch}>查询</Button>
+          {filterLayout.showExpand && (
+            <Button type="link" onClick={() => setExpand((v) => !v)} style={{ paddingInline: 4 }}>
+              {expand ? '收起' : '展开'}
+              <LucideIcon name={expand ? 'chevron-up' : 'chevron-down'} size={14} style={{ marginLeft: 4 }} />
+            </Button>
+          )}
+        </Space>
+      );
+
+      const visibleFields = useMemo(() => {
+        if (expand || !filterLayout.showExpand) return config.filterFields;
+        return config.filterFields.slice(0, filterLayout.collapsedCount);
+      }, [expand, filterLayout, config]);
+
+      const expandedRows = useMemo(() => {
+        if (!expand) return [visibleFields];
+        const rows = [];
+        for (let i = 0; i < config.filterFields.length; i += filterLayout.perRow) {
+          rows.push(config.filterFields.slice(i, i + filterLayout.perRow));
+        }
+        return rows;
+      }, [expand, filterLayout.perRow, config]);
+
+      const densityCycle = () => {
+        const order = ['large', 'middle', 'small'];
+        const labels = { large: '默认', middle: '中等', small: '紧凑' };
+        setTableSize((s) => {
+          const next = order[(order.indexOf(s) + 1) % order.length];
+          message.info(`表格密度：${labels[next]}`);
+          return next;
+        });
+      };
+
+      return (
+        <div style={{ minHeight: '100%', background: '#f5f5f5' }}>
+          {/* 页面标题区 */}
+          <div style={{ background: '#fff', padding: '16px 24px', borderBottom: '1px solid #f0f0f0' }}>
+            <div style={{ color: 'rgba(0,0,0,0.45)', marginBottom: 8 }}>
+              {config.breadcrumb.map((item, i) => (
+                <span key={item}>
+                  {i > 0 && <span style={{ margin: '0 8px', color: 'rgba(0,0,0,0.25)' }}>/</span>}
+                  <span style={{ color: i === config.breadcrumb.length - 1 ? 'rgba(0,0,0,0.65)' : undefined }}>{item}</span>
+                </span>
+              ))}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 600 }}>{config.title}</div>
+          </div>
+
+          <div style={{ padding: 24 }}>
+            {/* 查询表单卡片 */}
+            <Card style={{ marginBottom: 16 }} bodyStyle={{ padding: FILTER_PADDING }}>
+              <div ref={filterContainerRef}>
+                <Form form={form} labelCol={{ flex: `0 0 ${FILTER_LABEL_WIDTH}px` }} wrapperCol={{ flex: '0 0 auto' }}>
+                  {!expand ? (
+                    <Row gutter={[FILTER_GUTTER, 0]} align="middle" wrap={false}>
+                      {visibleFields.map((f) => (
+                        <Col flex="none" key={f.key}>{renderFilterField(f)}</Col>
+                      ))}
+                      <Col flex="auto" style={{ textAlign: 'right' }}>{renderFilterActions()}</Col>
+                    </Row>
+                  ) : (
+                    <>
+                      {expandedRows.map((rowFields, rowIndex) => (
+                        <Row
+                          key={rowFields.map((f) => f.key).join('-')}
+                          gutter={[FILTER_GUTTER, 0]}
+                          align="middle"
+                          wrap={false}
+                          style={{ marginTop: rowIndex > 0 ? FILTER_ROW_GAP : 0 }}
+                        >
+                          {rowFields.map((f) => (
+                            <Col flex="none" key={f.key}>{renderFilterField(f)}</Col>
+                          ))}
+                        </Row>
+                      ))}
+                      <Row justify="end" style={{ marginTop: FILTER_ROW_GAP }}>
+                        <Col flex="none">{renderFilterActions()}</Col>
+                      </Row>
+                    </>
+                  )}
+                </Form>
+              </div>
+            </Card>
+
+            {/* 表格卡片 */}
+            <Card
+              title={config.title}
+              extra={
+                <Space>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增</Button>
+                  <Button onClick={() => requireSelection(() => message.info(`批量编辑 ${selectedRowKeys.length} 项`))}>批量编辑</Button>
+                  <Button onClick={() => message.success(selectedRowKeys.length ? `导出选中 ${selectedRowKeys.length} 项` : `导出全部 ${filteredData.length} 条`)}>导出</Button>
+                  <Button onClick={() => requireSelection(() => {
+                    setDataSource((prev) => prev.map((r) =>
+                      selectedRowKeys.includes(r.id)
+                        ? { ...r, status: r.status === 'enabled' ? 'disabled' : 'enabled', updater: '当前用户', updateTime: dayjs().format('YYYY-MM-DD HH:mm:ss') }
+                        : r
+                    ));
+                    message.success(`已切换 ${selectedRowKeys.length} 项状态`);
+                  })}>启用/禁用</Button>
+                  <Button onClick={() => requireSelection(() => message.info(`查看 ${selectedRowKeys.length} 项日志`))}>日志</Button>
+                  <Space size={4} style={{ marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid #f0f0f0' }}>
+                    <Button type="text" icon={<ReloadOutlined />} onClick={() => { setRefreshKey((k) => k + 1); message.success('已刷新'); }} />
+                    <Button type="text" icon={<ColumnHeightOutlined />} onClick={densityCycle} />
+                    <Button type="text" icon={<SettingOutlined />} onClick={() => message.info('列设置')} />
+                  </Space>
+                </Space>
+              }
+            >
+              <Table
+                rowKey="id"
+                size={tableSize}
+                columns={columns}
+                dataSource={filteredData}
+                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+                pagination={{ showSizeChanger: true, showTotal: (t) => `共 ${t} 条`, defaultPageSize: 10, pageSizeOptions: [10, 20, 50] }}
+                scroll={{ x: 'max-content' }}
+              />
+            </Card>
+          </div>
+
+          {/* 新增/编辑弹窗 */}
+          <Modal
+            title={editingId ? `编辑${config.title}` : `新建${config.title}`}
+            open={modalOpen}
+            width={520}
+            destroyOnClose
+            maskClosable={false}
+            okText="确定"
+            cancelText="取消"
+            confirmLoading={modalSubmitting}
+            onOk={handleModalOk}
+            onCancel={() => setModalOpen(false)}
+          >
+            <Form form={modalForm} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 16 }}>
+              {config.formFields.map((f) => (
+                <Form.Item
+                  key={f.key}
+                  label={f.label}
+                  name={f.key}
+                  rules={f.required ? [{ required: true, message: `请输入${f.label}` }] : undefined}
+                >
+                  {f.type === 'select'
+                    ? <Select allowClear placeholder="请选择" options={f.options} />
+                    : f.type === 'textarea'
+                      ? <Input.TextArea placeholder="请输入" rows={3} />
+                      : <Input allowClear placeholder="请输入" />}
+                </Form.Item>
+              ))}
+            </Form>
+          </Modal>
+        </div>
+      );
+    }
+
+    function AdminShell() {
+      const [collapsed, setCollapsed] = useState(false);
+      const [activeKey, setActiveKey] = useState(DEFAULT_PAGE_KEY);
+      const menuItems = useMemo(() => buildMenuItems(PAGES), []);
+      const activePage = PAGES[activeKey];
+
+      return (
+        <Layout style={{ minHeight: '100vh' }}>
+          <Sider
+            theme="light"
+            width={SIDER_WIDTH}
+            collapsedWidth={48}
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            style={{ borderRight: '1px solid #f0f0f0' }}
+          >
+            <div className="admin-logo">{collapsed ? 'UG' : BRAND_NAME}</div>
+            <Menu
+              theme="light"
+              mode="inline"
+              selectedKeys={[activeKey]}
+              items={menuItems}
+              onClick={({ key }) => setActiveKey(key)}
+              style={{ borderInlineEnd: 0 }}
+            />
+          </Sider>
+          <Layout>
+            <Header style={{ height: 48, lineHeight: '48px', padding: '0 24px', background: '#fff', borderBottom: '1px solid #f0f0f0' }}>
+              <div className="admin-header-title">
+                {activePage.breadcrumb.map((item, i) => (
+                  <span key={item}>
+                    {i > 0 && <span className="sep">/</span>}
+                    <span className={i === activePage.breadcrumb.length - 1 ? 'current' : ''}>{item}</span>
+                  </span>
+                ))}
+              </div>
+            </Header>
+            <Content style={{ margin: 0, padding: 0, height: 'calc(100vh - 48px)', overflow: 'auto' }}>
+              <ListPage key={activeKey} config={activePage} />
+            </Content>
+          </Layout>
+        </Layout>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <ConfigProvider
+        locale={zhCN}
+        theme={{ token: { colorPrimary, borderRadius: 6, fontSize: 14 }, algorithm: theme.defaultAlgorithm }}
+      >
+        <AdminShell />
+      </ConfigProvider>
+    );
+  </script>
+</body>
+</html>
